@@ -24,7 +24,7 @@ def web_search(query: str) -> Dict[str, Any]: #parâmetro do tipo string que é 
 
     """Search the web for information""" #descrição mostrada ao llm, para ele entender o que deve fazer
 
-    return tavily_client.search(query) #chama a API da tavily para realizar uma busca na web
+    return tavily_client.search(query) #chama a API da tavily para realizar uma busca na web. O output vai ser uma série de resultados e artigos de busca web
 
 def tool_sqrt_no_agente():
     
@@ -51,9 +51,29 @@ def tool_sqrt_no_agente():
     pprint(response['messages']) #pprint (pretty print) imprime estruturas de dados organizados por quebras de linha e identação, ele mostra todos os atributos de cada objeto (resonse_metadata, usage_metadata, id...)
 
 def tool_web_search_no_agente():
+    model = ChatOllama(
+            model="qwen2.5:7b",
+            base_url=os.getenv("OLLAMA_API_KEY")
+        )
+        
+    agent = create_agent(
+        model=model,
+        tools=[web_search], #digo quais tools o agente pode usar
+        )
+    
+    question = HumanMessage(content="Who is the current mayor of Porto Alegre, Brazil?")
+
+    
+    response = agent.invoke(
+        {"messages": [question]}
+    ) #variável response é um dicionário (estado atualizado do agente), cuja chave é messages e o valor é uma lista de mensagens, intercalando human, Ai e Toool
+    
+    pprint(response['messages']) #primeiro acesso a chave messages e imprimo a lista de valores associados a essa chave 
 
 
 if __name__ == "__main__":
     #result = square_root.invoke({"x": 467})
     #print (result)
+    #pprint(web_search.invoke("Who is the current mayor of Porto Alegre?"))
+    tool_web_search_no_agente()
     
