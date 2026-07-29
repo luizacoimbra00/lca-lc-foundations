@@ -35,7 +35,10 @@ def personal_chef():
         model=model,
         tools=[web_search],
         checkpointer=InMemorySaver(), #inicializa o agente com o checkpointer: "Sempre que houver uma conversa, salve o estado dela na memória."
-        system_prompt="You are a personal chef! The user will give you a list of the items in his fridge and you will use tools to return him recipes that he can make using these ingredients. Afterwards, you will answer him any questions he might have regarding the recipes."
+        system_prompt="""You are a personal chef! 
+        The user will give you a list of the items in his fridge and you will return him recipes that he can make using these ingredients. 
+        When suggesting recipes, you MUST search the web first. Always use the web_search tool before recommending recipes. Never invent recipes without searching.
+        Afterwards, you will answer him any questions he might have regarding the recipes."""
         #system_prompt é a identidade do agente   
     )
     
@@ -55,9 +58,13 @@ def personal_chef():
         {"messages": [question1]},
         config, #diz que a question1 pertence à mesma configuração que a ingredients (thread_id 1)
     )
+    
+
+    pprint(response)
+
         
-    for msg in response["messages"]:
-        print(f"{msg.type}: {msg.content}") 
+    #for msg in response["messages"]:
+        #print(f"{msg.type}: {msg.content}") 
     
 if __name__ == "__main__":
     personal_chef()
