@@ -1,3 +1,5 @@
+#vamos usar um mcp cujo servidor foi definido localmente, aqui no projeto
+
 import sys
 import asyncio
 from dotenv import load_dotenv
