@@ -34,6 +34,8 @@ def agente_com_memoria():
     #dicionário externo --> chave: configurable / valor: {"thread_id": "1"}. Este valor também é um dicionário. 
     #dicionário interno --> chave: thread_id / valor: 1. Esse valor 1 representa um chat, uma conversa que deve ser memorizada. cada thread id é um histórico/memória diferente. 
 
+    #OBS: thread_id não é global para todo o seu computador nem para todo o projeto. Ele existe dentro da instância do checkpointer que está sendo usada.
+    
     response = agent.invoke( #ao chamar o agente, o invoke recebe dois argumentos: o estado de entrada (mensagem do usuário)
     #e a configuração de execução, que diz que a mensagem pertence à conversa cujo thread_id é 1
         {"messages": [question]},
