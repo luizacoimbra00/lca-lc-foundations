@@ -63,7 +63,7 @@ def custom_state_agent():
     #diferente do context schema, não preciso passar o state schema no invoke, pois eu registrei o tipo do estado na criação do agente 
     #ele atualiza o atributo (favourite colour) automaticamente chamando a tool
     
-    pprint(response)
+    #pprint(response)
     
     #mas, posso passar updates de estado eu mesma, no primeiro parâmetro do invoke (que é o do state). Nesse caso, não há chamado de tool, ele apenas atualiza o estado
     
@@ -75,7 +75,12 @@ def custom_state_agent():
         {"configurable": {"thread_id": "10"}}
     )
 
-    pprint(response)
+    #pprint(response)
+    
+    #até aqui, o agente tem tool que o permite ESCREVER no state, mas ele não enxerga automaticamente todos os seus campos, então não conseguiria responder "qual a cor favorita" do usuário
+    #para tal, preciso criar uma ferramenta que seja capaz de ler informações que estão em outros campos do state (fora do message, que ela não precisa tool p ler)
+    
+    #2: lê um atributo do estado de um agente, similar ao get do contexto 
     
     @tool
     def read_favourite_colour(runtime: ToolRuntime) -> str:
@@ -86,13 +91,25 @@ def custom_state_agent():
             return "No favourite colour found in state"
         
     agent = create_agent(
-            model=model,
-            tools=[update_favourite_colour],
-            checkpointer=InMemorySaver(), #sempre que houver uma conversa com o agenter, salve o estado dele na memória
-            state_schema=CustomState #define informações personalizadas dentro do estado do agente (informações que seguem o "molde" do CustomState)
-            )
+        model=model,
+        tools=[update_favourite_colour, read_favourite_colour], #além de atualizar atributo do estado, agente pode ler
+        checkpointer=InMemorySaver(), #sempre que houver uma conversa com o agenter, salve o estado dele na memória
+        state_schema=CustomState #define informações personalizadas dentro do estado do agente (informações que seguem o "molde" do CustomState)
+        )
+    
+    response = agent.invoke(
+    { "messages": [HumanMessage(content="My favourite colour is purple")]},
+    {"configurable": {"thread_id": "2"}} #aqui, ele chama a toool de update state
+    )
+    
+    response = agent.invoke(
+    { "messages": [HumanMessage(content="What's my favourite colour?")]},
+    {"configurable": {"thread_id": "2"}} #aqui, ele chama a tool de consultar o state
+    )
+
+    pprint(response)
         
 
 if __name__ == "__main__":
-    write_custom_state_agent()
+    custom_state_agent()
 
