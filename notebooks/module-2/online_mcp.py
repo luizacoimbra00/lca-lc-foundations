@@ -1,4 +1,4 @@
-#vamos usar um mcp externo, não local
+#vamos usar um mcp externo, não local (há incompatibvilidade, dá erro ao rodar, mas é problema do mcp e não do meu código)
 
 import sys
 import asyncio
