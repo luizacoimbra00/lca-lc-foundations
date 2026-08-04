@@ -1,9 +1,14 @@
+from urllib import response
+
+from typing_extensions import runtime
+
 from dotenv import load_dotenv
 from google_crc32c import exc
 from langchain.agents import AgentState
 from langchain.agents import create_agent
-from langchain.messages import HumanMessage
-from langchain.tools import tool
+from langchain.messages import HumanMessage, ToolMessage
+from langgraph.types import Command
+from langchain.tools import tool, ToolRuntime
 from pprint import pprint
 import os
 from langchain_ollama import ChatOllama
@@ -17,9 +22,9 @@ from langchain_community.utilities import SQLDatabase
 
 from asyncio import tools
 
-def main():
 
-    load_dotenv()
+
+load_dotenv()
 
 #PARTE 1: SETUP TOOLS, QUE SERÃO USADAS PELOS AGENTES 
 
@@ -27,7 +32,7 @@ def main():
     #criar uma classe para adicionar um comportamento extra ao cliente MCP: tentar novamente quando uma tool falhar
     #criar a classe porque servidores externos falham. Se não houver tratamento, a palicação quebra
     #"camada de proteção" entre cliente MCP e servidor MCP
-    async def mcp_viagem():
+async def main():
     
         RETRYABLE_MCP_CODES = {-32603} #cria um conjunto (set) contendo apenas o código que significa "erro interno do servidor"
 
@@ -90,72 +95,131 @@ def main():
         tools_mcp = await client.get_tools()
     
     #Subagente 2 (busca locais): Tool de busca na web para achar locais
-    tavily_client = TavilyClient()
+        tavily_client = TavilyClient()
 
-    @tool
-    def web_search(query: str, search_number: int, max_search_number: int) -> Dict[str, Any]:
-        """Search the web for information. You must track your search count by providing
-        search_number (starting at 1) and max_search_number on every call.
-        Queries must use only plain text characters. Do not use accented or special characters     
-        (e.g., use 'capacite' instead of 'capacité').
-        """
-        if search_number > max_search_number:
-            return {"message": "Search limit reached. Please summarize your findings and provide your final answer."}
-        try:
-            return tavily_client.search(query)
-        except Exception as e:
-            return {"error": str(e)}
+        @tool
+        def web_search(query: str, search_number: int, max_search_number: int) -> Dict[str, Any]:
+            """Search the web for information. You must track your search count by providing
+            search_number (starting at 1) and max_search_number on every call.
+            Queries must use only plain text characters. Do not use accented or special characters     
+            (e.g., use 'capacite' instead of 'capacité').
+            """
+            if search_number > max_search_number:
+                return {"message": "Search limit reached. Please summarize your findings and provide your final answer."}
+            try:
+                return tavily_client.search(query)
+            except Exception as e:
+                return {"error": str(e)}
     
     #Subagente 3 (faz playlist): Tool para conhecer o banco de dados e consultar
-    db = SQLDatabase.from_uri("sqlite:///resources/Chinook.db")
+        db = SQLDatabase.from_uri("sqlite:///resources/Chinook.db")
 
-    @tool
-    def list_tables(): #retorna tabelas
-        """List all database tables"""
-        return str(db.get_usable_table_names())
+        @tool
+        def list_tables_db(): #retorna tabelas
+            """List all database tables"""
+            return str(db.get_usable_table_names())
 
-    @tool
-    def get_schema(table_name: str): #recebe tabela e retorna o schema (estrutura), ou seja, quais colunas ela tem, quais tipos de dados cada coluna tem, etc.
-        """Get schema of a table"""
-        return db.get_table_info([table_name])
+        @tool
+        def get_schema_db(table_name: str): #recebe tabela e retorna o schema (estrutura), ou seja, quais colunas ela tem, quais tipos de dados cada coluna tem, etc.
+            """Get schema of a table"""
+            return db.get_table_info([table_name])
     
-    @tool
-    def query_playlist_db(query: str) -> str:
+        @tool
+        def query_playlist_db(query: str) -> str:
 
-        """Query the database for playlist information"""
+            """Query the database for playlist information"""
 
-        try:
-            return db.run(query)
-        except Exception as e:
-            return f"Error querying database: {e}"
+            try:
+                return db.run(query)
+            except Exception as e:
+                return f"Error querying database: {e}"
+            
+    #Agente Orquestrador
+    
+    #as 3 tools de chamar os subagentes fazem a mesma coisa:
+        #Leem dados do estado.
+        #Montam uma mensagem com os dados do estado.
+        #Chamam um subagente passando a mensagem.
+        #Retornam a resposta do subagente.
+ 
+        
+        @tool
+        def search_venues(runtime: ToolRuntime) -> str:
+            """Venue agent chooses the best venue for the given location and capacity."""
+            destination = runtime.state["destination"]
+            capacity = runtime.state["guest_count"]
+            query = f"Find wedding venues in {destination} for {capacity} guests"
+            response = venue_agent.invoke({"messages": [HumanMessage(content=query)]})
+        return response['messages'][-1].content
         
 #PARTE 2: CRIAÇÃO DOS AGENTES  
-    class WeddingState(AgentState): #esse estado personalizado pertence ao agente orquestrador, e os parâmetros serão incorporados ao estado quando esse agente for criado 
-        origin: str
-        destination: str
-        guest_count: str
-        genre: str
+        class WeddingState(AgentState): #esse estado personalizado pertence ao agente orquestrador, e os parâmetros serão incorporados ao estado quando esse agente for criado 
+            origin: str
+            destination: str
+            guest_count: str
+            genre: str
         
-    model = ChatOllama(
-        model="qwen2.5:7b",
-        base_url=os.getenv("OLLAMA_API_KEY")
-                )
+        model = ChatOllama(
+            model="qwen2.5:7b",
+            base_url=os.getenv("OLLAMA_API_KEY")
+            )
 
     #Subagente 1: Travel agent
-   
-    travel_agent = create_agent(
+        travel_agent = create_agent(
+            model=model,
+            tools=tools_mcp,
+            system_prompt="""
+            You are a travel agent. Search for flights to the desired destination wedding location.
+            You are not allowed to ask any more follow up questions, you must find the best flight options based on the following criteria:
+            - Price (lowest, economy class)
+            - Duration (shortest)
+            - Date (time of year which you believe is best for a wedding at this location)
+            To make things easy, only look for one ticket, one way.
+            You may need to make multiple searches to iteratively find the best options.
+            You will be given no extra information, only the origin and destination. It is your job to think critically about the best options.
+            If the MCP tool fails, returns malformed output, or does not give you usable flight results, try the tool again.
+            Once you have found the best options, let the user know your shortlist of options.
+            """
+            )
+        
+    #Subagente 2: Venue agent
+        venue_agent = create_agent(
         model=model,
-        tools=tools_mcp,
+        tools=[web_search],
         system_prompt="""
-        You are a travel agent. Search for flights to the desired destination wedding location.
-        You are not allowed to ask any more follow up questions, you must find the best flight options based on the following criteria:
-        - Price (lowest, economy class)
-        - Duration (shortest)
-        - Date (time of year which you believe is best for a wedding at this location)
-        To make things easy, only look for one ticket, one way.
-        You may need to make multiple searches to iteratively find the best options.
-        You will be given no extra information, only the origin and destination. It is your job to think critically about the best options.
-        If the MCP tool fails, returns malformed output, or does not give you usable flight results, try the tool again.
-        Once you have found the best options, let the user know your shortlist of options.
+        You are a venue specialist. Search for venues in the desired location, and with the desired capacity.
+        You are not allowed to ask any more follow up questions, you must find the best venue options based on the following criteria:
+        - Price (lowest)
+        - Capacity (exact match)
+        - Reviews (highest)
+        You may need to make multiple searches to iteratively find the best options. 
+        You have a suggested limit of 12 web searches. Count every web_search call you make.
+        After 12 searches, you should stop searching and summarize the best options you have
+        found so far.
         """
-    )
+        )
+        
+    #Subagente 3: Playlist agent
+        playlist_agent = create_agent(
+        model=model,
+        tools=[list_tables_db, get_schema_db, query_playlist_db],
+        system_prompt="""
+        You are a playlist specialist. Query the sql database and curate the perfect playlist for a wedding given a genre.
+        Once you have your playlist, calculate the total duration and cost of the playlist, each song has an associated price.
+        If you run into errors when querying the database, try to fix them by making changes to the query.
+        Do not come back empty handed, keep trying to query the db until you find a list of songs.
+
+        This is a SQLite database. Before writing any data queries, first discover the schema.
+        """
+        )
+        
+    #Main agent: Wedding planner agent
+        @tool
+        #async pois o travel_agent usa MCP
+        async def call_travel_agent(runtime: ToolRuntime) -> str: #runtime está sendo usado para acessar o estado do agente orquestrador, que contém as informações de origem e destino da viagem
+            """Travel agent searches for flights to the desired destination wedding location."""
+            origin = runtime.state["origin"]
+            destination = runtime.state["destination"]
+            response = await travel_agent.ainvoke({"messages": [HumanMessage(content=f"Find flights from {origin} to {destination}")]})
+            return response['messages'][-1].content
+    
