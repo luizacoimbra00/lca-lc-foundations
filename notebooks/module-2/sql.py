@@ -77,7 +77,7 @@ def sql_agente():
     question = HumanMessage(content="Who is the most popular artist beginning with 'S' in this database?")
 
     response = agent.invoke(
-        {"messages": [question]} #agente recebe a pergunta do usuário, pensa que precisa descobrir, sabe que tem uma tool SQL, então consulta o banco, fazendo toolcall
+        {"messages": [question]} #agente recebe a pergunta do usuário, pensa que precisa descobrir, sabe que tem tools SQL, então consulta o banco, fazendo toolcall
     )
     
     pprint(response['messages'])
