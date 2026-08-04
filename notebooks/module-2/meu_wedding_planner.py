@@ -26,7 +26,7 @@ from asyncio import tools
 
 load_dotenv()
 
-#PARTE 1: SETUP TOOLS, QUE SERÃO USADAS PELOS AGENTES 
+#PARTE 1: SETUP TOOLS, QUE SERÃO USADAS PELOS SUBAGENTES 
 
     #Subagente 1 (planeja viagens): Mcp para ele conseguir acessar e planejar as viagens, um mcp que o kiwi oferece. 
     #criar uma classe para adicionar um comportamento extra ao cliente MCP: tentar novamente quando uma tool falhar
@@ -134,30 +134,8 @@ async def main():
             except Exception as e:
                 return f"Error querying database: {e}"
             
-    #Agente Orquestrador
-    
-    #as 3 tools de chamar os subagentes fazem a mesma coisa:
-        #Leem dados do estado.
-        #Montam uma mensagem com os dados do estado.
-        #Chamam um subagente passando a mensagem.
-        #Retornam a resposta do subagente.
- 
         
-        @tool
-        def search_venues(runtime: ToolRuntime) -> str:
-            """Venue agent chooses the best venue for the given location and capacity."""
-            destination = runtime.state["destination"]
-            capacity = runtime.state["guest_count"]
-            query = f"Find wedding venues in {destination} for {capacity} guests"
-            response = venue_agent.invoke({"messages": [HumanMessage(content=query)]})
-        return response['messages'][-1].content
-        
-#PARTE 2: CRIAÇÃO DOS AGENTES  
-        class WeddingState(AgentState): #esse estado personalizado pertence ao agente orquestrador, e os parâmetros serão incorporados ao estado quando esse agente for criado 
-            origin: str
-            destination: str
-            guest_count: str
-            genre: str
+#PARTE 2: CRIAÇÃO DOS SUBAGENTES  
         
         model = ChatOllama(
             model="qwen2.5:7b",
@@ -205,6 +183,14 @@ async def main():
         tools=[list_tables_db, get_schema_db, query_playlist_db],
         system_prompt="""
         You are a playlist specialist. Query the sql database and curate the perfect playlist for a wedding given a genre.
+        Before writing any SQL query:
+        
+        1. Call list_tables.
+        2. Inspect every table that may be relevant.
+        3. Never assume column names.
+        4. Only write SQL after inspecting the schemas.
+        5. If a query fails, inspect schemas again before retrying.
+            
         Once you have your playlist, calculate the total duration and cost of the playlist, each song has an associated price.
         If you run into errors when querying the database, try to fix them by making changes to the query.
         Do not come back empty handed, keep trying to query the db until you find a list of songs.
@@ -213,7 +199,20 @@ async def main():
         """
         )
         
-    #Main agent: Wedding planner agent
+#PARTE 3: CRIAÇÃO DAS TOOLS DO AGENTE ORQUESTRADOR
+
+        class WeddingState(AgentState): #esse estado personalizado pertence ao agente orquestrador, e os parâmetros serão incorporados ao estado quando esse agente for criado 
+                origin: str
+                destination: str
+                guest_count: str
+                genre: str
+        
+        #As 3 tools de chamar os subagentes fazem a mesma coisa:
+            #Leem dados do estado (função runtime.state["nome do atributo"])
+            #Montam uma mensagem com os dados do estado.
+            #Chamam um subagente passando a mensagem.
+            #Retornam a resposta do subagente.
+     
         @tool
         #async pois o travel_agent usa MCP
         async def call_travel_agent(runtime: ToolRuntime) -> str: #runtime está sendo usado para acessar o estado do agente orquestrador, que contém as informações de origem e destino da viagem
@@ -223,3 +222,60 @@ async def main():
             response = await travel_agent.ainvoke({"messages": [HumanMessage(content=f"Find flights from {origin} to {destination}")]})
             return response['messages'][-1].content
     
+        @tool
+        def call_venue_agent(runtime: ToolRuntime) -> str:
+            """Venue agent chooses the best venue for the given location and capacity."""
+            destination = runtime.state["destination"]
+            capacity = runtime.state["guest_count"]
+            query = f"Find wedding venues in {destination} for {capacity} guests"
+            response = venue_agent.invoke({"messages": [HumanMessage(content=query)]})
+            return response['messages'][-1].content
+        
+        @tool
+        def call_playlist_agent(runtime: ToolRuntime) -> str:
+            """Playlist agent curates the perfect playlist for the given genre."""
+            genre = runtime.state["genre"]
+            query = f"Find {genre} tracks for wedding playlist"
+            response = playlist_agent.invoke({"messages": [HumanMessage(content=query)]})
+            return response['messages'][-1].content
+        
+        @tool
+        def update_state(origin: str, destination: str, guest_count: str, genre: str, runtime: ToolRuntime) -> str:
+            """Update the state when you know all of the values: origin, destination, guest_count, genre. 
+            This tool must be called alone, without any other tool calls. It must complete and return to make,
+            the information available to other tools."""
+            return Command(update={
+                "origin": origin, 
+                "destination": destination, 
+                "guest_count": guest_count, 
+                "genre": genre, 
+                "messages": [ToolMessage("Successfully updated state", tool_call_id=runtime.tool_call_id)]}
+                )
+            
+#PARTE 4: CRIAÇÃO DO AGENTE ORQUESTRADOR
+            
+    #Main agent: Wedding planner agent
+        coordinator = create_agent(
+            model=model,
+            tools=[call_travel_agent, call_venue_agent, call_playlist_agent, update_state],
+            state_schema=WeddingState,
+            system_prompt="""
+            You are a wedding coordinator. 
+            First find all the information you need to update the state. When you have the information, update the state.
+            Once that has completed and returned, you can delegate the tasks 
+            to your specialists for flights, venues, and playlists.
+            Once you have received their answers, coordinate the perfect wedding for me.
+            """
+            )
+        
+#PARTE 5: EXECUÇÃO/TESTE 
+        response = await coordinator.ainvoke( #.ainvoke é usado porque tem função assíncrona do mcp (no travel_agent). Se não tivesse, poderia usar invoke normal.
+            {
+            "messages": [HumanMessage(content="I'm from London and I'd like a wedding in Paris for 100 guests, jazz-genre")], #lembrando que não é definida data. 
+            },
+            config={"tags": ["WP"], "recursion_limit": 40},  
+            )   
+        #tag, diferente do thread_id, é usada para organizar execuções do agente (identifica processos)
+        #recursion_limit define o número máximo de passos que um agente pode executar antes de ser interrompido.
+        #se der um erro em alguma etapa, sem limite ele poderia rodar para sempre. Mas o langchain define um numero padrao (25), aumentamos pq o agente pode usar mais processos
+        pprint(response)
