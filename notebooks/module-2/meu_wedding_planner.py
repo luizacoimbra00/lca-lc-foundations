@@ -3,7 +3,6 @@ from urllib import response
 from typing_extensions import runtime
 
 from dotenv import load_dotenv
-from google_crc32c import exc
 from langchain.agents import AgentState
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage, ToolMessage
@@ -19,8 +18,6 @@ from mcp.types import CallToolResult, TextContent
 from typing import Dict, Any
 from tavily import TavilyClient
 from langchain_community.utilities import SQLDatabase
-
-from asyncio import tools
 
 
 
@@ -260,11 +257,25 @@ async def main():
             tools=[call_travel_agent, call_venue_agent, call_playlist_agent, update_state],
             state_schema=WeddingState,
             system_prompt="""
-            You are a wedding coordinator. 
-            First find all the information you need to update the state. When you have the information, update the state.
-            Once that has completed and returned, you can delegate the tasks 
-            to your specialists for flights, venues, and playlists.
-            Once you have received their answers, coordinate the perfect wedding for me.
+            You are a wedding coordinator.
+
+            STEP 1:
+            Extract origin, destination, guest_count and genre.
+
+            STEP 2:
+            Call update_state ONLY.
+
+            Do not call any other tool together with update_state.
+
+            Wait for update_state to complete.
+
+            STEP 3:
+            After state has been updated,
+            call the specialist tools.
+
+            Only call search_flights,
+            search_venues and suggest_playlist
+            after update_state has returned successfully.
             """
             )
         
@@ -279,3 +290,6 @@ async def main():
         #recursion_limit define o número máximo de passos que um agente pode executar antes de ser interrompido.
         #se der um erro em alguma etapa, sem limite ele poderia rodar para sempre. Mas o langchain define um numero padrao (25), aumentamos pq o agente pode usar mais processos
         pprint(response)
+        
+if __name__ == "__main__":
+    asyncio.run(main())
