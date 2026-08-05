@@ -1,7 +1,5 @@
 from urllib import response
-
 from typing_extensions import runtime
-
 from dotenv import load_dotenv
 from langchain.agents import AgentState
 from langchain.agents import create_agent
@@ -113,19 +111,26 @@ async def main():
 
         @tool
         def list_tables_db(): #retorna tabelas
-            """List all database tables"""
+            """
+            Returns all database tables.
+            Must be called before querying the database.
+            """
             return str(db.get_usable_table_names())
 
         @tool
         def get_schema_db(table_name: str): #recebe tabela e retorna o schema (estrutura), ou seja, quais colunas ela tem, quais tipos de dados cada coluna tem, etc.
-            """Get schema of a table"""
+            """
+            Returns schema information for a table.
+            Use this before writing SQL.
+            """
             return db.get_table_info([table_name])
     
         @tool
         def query_playlist_db(query: str) -> str:
-
-            """Query the database for playlist information"""
-
+            """
+            Execute a SQL query against the music database.
+            Returns query results.
+            """
             try:
                 return db.run(query)
             except Exception as e:
@@ -153,7 +158,7 @@ async def main():
             You may need to make multiple searches to iteratively find the best options.
             You will be given no extra information, only the origin and destination. It is your job to think critically about the best options.
             If the MCP tool fails, returns malformed output, or does not give you usable flight results, try the tool again.
-            Once you have found the best options, let the user know your shortlist of options.
+            Once you have found the best options, let the user know your shortlist of options. Always answer in English. Never answer in any other language.
             """
             )
         
@@ -179,20 +184,62 @@ async def main():
         model=model,
         tools=[list_tables_db, get_schema_db, query_playlist_db],
         system_prompt="""
-        You are a playlist specialist. Query the sql database and curate the perfect playlist for a wedding given a genre.
-        Before writing any SQL query:
-        
-        1. Call list_tables.
-        2. Inspect every table that may be relevant.
-        3. Never assume column names.
-        4. Only write SQL after inspecting the schemas.
-        5. If a query fails, inspect schemas again before retrying.
-            
-        Once you have your playlist, calculate the total duration and cost of the playlist, each song has an associated price.
-        If you run into errors when querying the database, try to fix them by making changes to the query.
-        Do not come back empty handed, keep trying to query the db until you find a list of songs.
+        You are a playlist specialist.
 
-        This is a SQLite database. Before writing any data queries, first discover the schema.
+        Your job is to create a wedding playlist based on the requested genre.
+        
+        You MUST call tools.
+
+        Before writing any playlist:
+
+        1. Call list_tables_db.
+        2. Call get_schema_db on relevant tables.
+        3. Call query_playlist_db.
+
+        Do not invent songs.
+        Do not use prior knowledge.
+        All songs must come from the database.
+
+        If you have not queried the database, you are not allowed to answer.
+
+        DATABASE WORKFLOW:
+
+        1. Call list_tables_db.
+        2. Inspect relevant tables with get_schema_db.
+        3. Discover where songs, artists, duration, genre and price are stored.
+        4. Never assume schema.
+        5. Build SQL queries only after inspecting schemas.
+        6. If a query fails, inspect schemas again and retry.
+        7. Continue until you obtain songs.
+
+        PLAYLIST REQUIREMENTS:
+
+        - Select songs matching the requested genre.
+        - Return at least 10 songs whenever possible.
+        - Show:
+        - title
+        - artist
+        - duration
+        - price
+
+        After selecting songs:
+
+        - Calculate total duration.
+        - Calculate total cost.
+
+        FINAL OUTPUT FORMAT:
+
+        Playlist:
+        1. Song - Artist - Duration - Price
+        2. Song - Artist - Duration - Price
+        ...
+
+        Total duration: X
+        Total cost: Y
+
+        Never return only totals.
+        Never return only SQL.
+        Always return the full playlist.
         """
         )
         
@@ -213,7 +260,8 @@ async def main():
         @tool
         #async pois o travel_agent usa MCP
         async def call_travel_agent(runtime: ToolRuntime) -> str: #runtime está sendo usado para acessar o estado do agente orquestrador, que contém as informações de origem e destino da viagem
-            """Travel agent searches for flights to the desired destination wedding location."""
+            """Call the travel agent specialist. DO NOT pass arguments. Read everything from runtime.state."""
+            print("STATE:", runtime.state)
             origin = runtime.state["origin"]
             destination = runtime.state["destination"]
             response = await travel_agent.ainvoke({"messages": [HumanMessage(content=f"Find flights from {origin} to {destination}")]})
@@ -221,7 +269,8 @@ async def main():
     
         @tool
         def call_venue_agent(runtime: ToolRuntime) -> str:
-            """Venue agent chooses the best venue for the given location and capacity."""
+            """Call the venue agent specialist. DO NOT pass arguments. Read everything from runtime.state."""
+            print("STATE:", runtime.state)
             destination = runtime.state["destination"]
             capacity = runtime.state["guest_count"]
             query = f"Find wedding venues in {destination} for {capacity} guests"
@@ -230,10 +279,18 @@ async def main():
         
         @tool
         def call_playlist_agent(runtime: ToolRuntime) -> str:
-            """Playlist agent curates the perfect playlist for the given genre."""
+            """ Call the playlist agent specialist. DO NOT pass arguments. Read everything from runtime.state."""
+            print("STATE:", runtime.state)
             genre = runtime.state["genre"]
-            query = f"Find {genre} tracks for wedding playlist"
-            response = playlist_agent.invoke({"messages": [HumanMessage(content=query)]})
+            query = f"""
+            Wedding genre: {genre}
+
+            Build a wedding playlist from the database.
+            Return at least 10 songs if available.
+            Show title, artist, duration and price for every song.
+            Then calculate total duration and total cost.
+            """
+            response = playlist_agent.invoke({"messages": [HumanMessage(content=query)]}, config={"recursion_limit": 30})
             return response['messages'][-1].content
         
         @tool
@@ -257,7 +314,11 @@ async def main():
             tools=[call_travel_agent, call_venue_agent, call_playlist_agent, update_state],
             state_schema=WeddingState,
             system_prompt="""
-            You are a wedding coordinator.
+            You are a wedding coordinator, your role is to be an orquestrator agent that can coordinate 3 specialist sub-agents.
+            When a specialist agent returns structured results, preserve all details exactly as returned.
+            Do not remove song durations.
+            Do not remove song prices.
+            When call_playlist_agent returns a playlist, copy the playlist exactly as received. Do not rewrite it. Do not shorten it. Do not summarize it.
 
             STEP 1:
             Extract origin, destination, guest_count and genre.
@@ -271,11 +332,9 @@ async def main():
 
             STEP 3:
             After state has been updated,
-            call the specialist tools.
-
-            Only call search_flights,
-            search_venues and suggest_playlist
-            after update_state has returned successfully.
+            call call_travel_agent,
+            call_venue_agent,
+            and call_playlist_agent.
             """
             )
         
@@ -284,7 +343,7 @@ async def main():
             {
             "messages": [HumanMessage(content="I'm from London and I'd like a wedding in Paris for 100 guests, jazz-genre")], #lembrando que não é definida data. 
             },
-            config={"tags": ["WP"], "recursion_limit": 40},  
+            config={"tags": ["WP"], "thread_id": "wedding-1", "recursion_limit": 40},  
             )   
         #tag, diferente do thread_id, é usada para organizar execuções do agente (identifica processos)
         #recursion_limit define o número máximo de passos que um agente pode executar antes de ser interrompido.

@@ -62,16 +62,16 @@ def sql_agente():
         model=model,
         tools=[list_tables, get_schema, sql_query], #dou ao agente a habilidade de entender e consultar o banco de dados através das tools
         system_prompt="""
-    You are a SQL expert.
+        You are a SQL expert.
 
-    Before writing any SQL query:
+        Before writing any SQL query:
 
-    1. Call list_tables.
-    2. Inspect every table that may be relevant.
-    3. Never assume column names.
-    4. Only write SQL after inspecting the schemas.
-    5. If a query fails, inspect schemas again before retrying.
-    """
+        1. Call list_tables.
+        2. Inspect every table that may be relevant.
+        3. Never assume column names.
+        4. Only write SQL after inspecting the schemas.
+        5. If a query fails, inspect schemas again before retrying.
+        """
         )
 
     question = HumanMessage(content="Who is the most popular artist beginning with 'S' in this database?")
