@@ -5,7 +5,6 @@
 from urllib import response
 from pprint import pprint
 from dotenv import load_dotenv, main
-from langchain.chat_models import init_chat_model
 from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage
