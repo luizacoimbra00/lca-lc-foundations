@@ -25,7 +25,10 @@ def conhecendo_banco():
     print(db.get_table_info(["Customer"]))
     print(db.get_table_info(["Invoice"]))
     print(db.get_table_info(["Playlist"]))
-    print(db.get_table_info(["PlaylistTrack"]))
+    print(db.get_table_info(model = ChatOllama(
+                model="qwen2.5:7b",
+                base_url=os.getenv("OLLAMA_API_KEY")
+                    )["PlaylistTrack"]))
 
     print(db.run("SELECT * FROM Artist LIMIT 5"))
     print(db.run("SELECT * FROM Album LIMIT 5"))
