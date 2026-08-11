@@ -3,10 +3,6 @@
 #Aqui, vamos ver middlewares como ferramentas lidar com conversas longas e evitar encher a janela de contexto
 #Há dois de estratégias para isso usando middlewares: sumarizar (resumir) conversas, ou deletar parte delas
 
-from urllib import response
-
-from urllib import response
-
 from dotenv import load_dotenv
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain.agents.middleware import SummarizationMiddleware
@@ -21,7 +17,6 @@ from langchain.messages import ToolMessage
 import os
 from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
-from prometheus_client import Summary
 
 
 load_dotenv()
