@@ -15,16 +15,18 @@ import os
 from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 
+load_dotenv()
+
 def hitl():
     
     @tool
     def read_email(runtime: ToolRuntime) -> str: #tool que dá acesso ao estado do agente
-        """Read an email from the given address."""
+        """Read an email stored in the current state"""
         return runtime.state["email"] #Lê o email armazenado no estado. Tool retorna esse email. 
 
     @tool
     def send_email(body: str) -> str: #tool que recebe o texto do email. O retorno é uma string, mas ele não manda o email de vdd (precisaria API, etc), só dá uma msg de retorno
-        """Send an email to the given address with the given subject and body."""
+        """Send an email with the given body."""
         return f"Email sent"
     
     class EmailState(AgentState): #criando estado customizado
@@ -40,6 +42,17 @@ def hitl():
         tools=[read_email, send_email],
         state_schema=EmailState, #define estado personalizado do agente (agora tem messages e email)
         checkpointer=InMemorySaver(),
+        system_prompt="""
+        You are an email assistant.
+
+        When the user asks you to reply to an email:
+
+        1. First use the read_email tool to read the email.
+        2. After reading the email, write an appropriate reply.
+        3. Then use the send_email tool to send that reply.
+        4. Do not ask the user for the sender's email address because the ead_email tool already provides the email content.
+        """,
+
         middleware=[
             HumanInTheLoopMiddleware(
                 interrupt_on={
@@ -61,10 +74,27 @@ def hitl():
         config=config
     )
     
-    pprint(response)
+    #pprint(response)
     
     #passo a passo do agente: tool read_email, tool retorna esse email, modelo gera uma resposta e dá para a llm, que quer chamar tool send_email, middleware interrompe
     #essa response vai conter esse passo a passo, e a execução vai terminar pq o agente encontrou o interrupt
+    #estrutura do response vai ser assim: {
+    #"__interrupt__": [...], aqui, há uma parte que dá 4 opções de ações ao usuário 'allowed_decisions': ['approve','edit','reject','respond']},
+    #"email": "...",
+    #"messages": [...] }
+    
+    #como salvamos as instruções de memória num checkpointer, vamos seguir o fluxo simulando o usuário aceitar.
+    #A primeira execução já terminou, retornando o interrupt. Agora precisamos dizer ao agente: "Pode continuar." Por isso fazemos uma segunda chamada:
+    
+    response = agent.invoke(
+        Command( #comando de continuar execução que estava interrompida (resume), passando item da lista correspondente
+            resume={"decisions": [{"type": "approve"}]}
+        ), 
+        config=config # Same thread ID to resume the paused conversation
+    )
+
+    pprint(response) #aqui nesse print estou vendo o novo resultado da execução, agora depois da aprovação.
+
 
 if __name__ == "__main__":
     hitl()
