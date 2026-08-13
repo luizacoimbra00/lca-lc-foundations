@@ -74,7 +74,9 @@ def hitl():
         config=config
     )
     
-    #pprint(response)
+    pprint(response)
+    
+    #pprint("\n-------------------------------------------------ACEITAR----------------------------------------------------------------------")
     
     #passo a passo do agente: tool read_email, tool retorna esse email, modelo gera uma resposta e dá para a llm, que quer chamar tool send_email, middleware interrompe
     #essa response vai conter esse passo a passo, e a execução vai terminar pq o agente encontrou o interrupt
@@ -86,14 +88,58 @@ def hitl():
     #como salvamos as instruções de memória num checkpointer, vamos seguir o fluxo simulando o usuário aceitar.
     #A primeira execução já terminou, retornando o interrupt. Agora precisamos dizer ao agente: "Pode continuar." Por isso fazemos uma segunda chamada:
     
+    #ALTERNATIVA 1: APROVAR
+    #response = agent.invoke(
+        #Command( #comando de continuar execução que estava interrompida (resume), passando item da lista correspondente
+            #resume={"decisions": [{"type": "approve"}]}
+        #), 
+        #config=config # Same thread ID to resume the paused conversation
+    #)
+
+    
+    #pprint(response) #aqui nesse print vou ver o resultado da execução depois que o interrupt foi resolvido, não a decisão approve como parte do histórico.
+    #o response da segunda chamada é, em princípio, o resultado depois da resolução do interrupt. O __interrupt__ pode não aparecer no resultado final porque aquela interrupção já foi resolvida.
+
+    pprint("\n-------------------------------------------------REJEITAR----------------------------------------------------------------------")  
+    
+    #ALTERNATIVA 2: REJEITAR
+    #O reject não termina necessariamente a execução inteira do agente. Ele rejeita a ação específica. Depois disso, o agente pode continuar raciocinando.
+    #response = agent.invoke(
+        #Command(
+            #resume={
+                #"decisions": [
+                    #{"type": "reject",
+                        # An explanation of why the request was rejected
+                        #"message": "No please sign off - Your merciful leader, Seán."}]}
+            #), 
+    #config=config # Same thread ID to resume the paused conversation
+    #)
+
+    #pprint(response)
+    
+    pprint("\n-------------------------------------------------EDITAR----------------------------------------------------------------------")  
+
+    #ALTERNATIVA 3: EDITAR
     response = agent.invoke(
-        Command( #comando de continuar execução que estava interrompida (resume), passando item da lista correspondente
-            resume={"decisions": [{"type": "approve"}]}
-        ), 
-        config=config # Same thread ID to resume the paused conversation
+    Command(
+        resume={
+            "decisions": [
+                {"type": "edit",
+                    #Edited action with tool name and args
+                    "edited_action": {
+                        #Tool name to call: Will usually be the same as the original action.
+                        "name": "send_email",
+                        #Arguments to pass to the tool, modifying the 
+                        "args": {"body": "This is the last straw, you're fired!"}, #body é o nome da variável definida na tool send_email como parametro. Estou passando um novo valor como parametro e chamando a tool de novo.
+                    }
+                }
+            ]
+        }
+    ), 
+    config=config # Same thread ID to resume the paused conversation
     )
 
-    pprint(response) #aqui nesse print estou vendo o novo resultado da execução, agora depois da aprovação.
+    pprint(response)
 
 
 if __name__ == "__main__":
