@@ -67,7 +67,7 @@ def summarize(): #cria agente com memória (checkpointer) e middleware que resum
         #Next Steps → tarefas pendentes ou próximos passos mencionados.
         
 def trim_or_delete(): #maior controle sobre o que será deletado do histórico. 
-    #decorators/marcadores: definem em que ponto do ciclo de execução do agente o middleware será executado.
+    #decorators/marcadores: definem em que ponto do ciclo de execução do agente o middleware será executado. (NODE STYLE MIDDLEWARE: bom para mudar/controlar o estado do agente)
     #@before_agent e @after_agent: Executa uma vez no início ou final da execução do agente. (todas as tools ja foram chamadas, respostas geradas, resultado final ja existe)
     #@before_model e @after_model: Executam antes ou depois do agente fazer cada chamada ao LLM.
     #before/after_model podem acontecer várias vezes durante uma única execução, enquanto before/after_agent normalmente acontecem apenas uma vez por agent.invoke().
